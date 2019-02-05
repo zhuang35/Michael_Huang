@@ -14,7 +14,7 @@ manga.py latest # prints latest chapter releases
 
 ## About
 
-Generates shelf files (mangaShelf.bak, mangaShelf.dir, mangaShelf.dat on windows) to store data. If the program runs into an error, will reset shelf by default.
+Generates shelf files (mangaShelf.bak, mangaShelf.dir, mangaShelf.dat on windows) to store data. If the program runs into an error, will reset shelf by default. Includes install.bat to install python package dependencies (bs4, requests)
 
 ## TODO
 
