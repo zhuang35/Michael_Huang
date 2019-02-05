@@ -217,7 +217,7 @@ if __name__ == "__main__":
                 resetShelf('mangaShelf', mangaList)
                 try: 
                     newMangaChapter(mangaDict, mangaList)
-                else:
+                except:
                     print('Error Occured')
         if sys.argv[1] == 'latest':
             newestChapters('mangaShelf')
