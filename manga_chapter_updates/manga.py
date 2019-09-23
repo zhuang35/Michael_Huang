@@ -7,89 +7,116 @@
 import requests, re, bs4, shelve, sys
 
 
-# resets state of shelf, removing all previously released chapters from the list
-def resetShelf(shelfName, mangaList):
-    s = shelve.open(shelfName, flag='n')
-    
-    print('Resetting saved data...')
-    for manga in mangaList:
-        s[manga] = ['NONE', 'NONE', [0, 0, 0], 0]
-    s.close()
+class Manga:
+    '''
+    Manga class for each tracked Manga title.
 
-    print('Tracking:')
-    for i in mangaList:
-        print('   ', mangaSubredditToString(i))
+    __init__
+        :param string name:
+        :param string regex:
+        :param int threshold:
+
+    Attributes:
+        name (str): name of the tracked manga
+        regex (re.compile): regex pattern to be matched when scraping
+        threshold (int): number of matches required to confirm new chapter
+        chapter_list (list[int]): list of chapter numbers tracked
+        release_date_list (list[str]): list of tracked release dates
+        release_date_UTC_list (list[str]): list of tracked dates in ####-##-## format
+
+    '''
+
+    def __init__(self, name, regex, threshold):
+        self.name = name
+        self.regex = re.compile(regex, re.IGNORECASE)
+        self.threshold = threshold
+        self.chapter_list = []
+        self.release_date_list = []
+        self.release_date_UTC_list = []
+
+    # adds new entry
+    def add_entry(self, chapter_number, release_date, release_date_UTC):
+        self.chapter_list.append(chapter_number)
+        self.release_date_list.append(release_date)
+        self.release_date_UTC_list.append(release_date_UTC)
+
+    # removes oldest entry
+    def remove_entry(self):
+        self.chapter_list.pop(0)
+        self.release_date_list.pop(0)
+        self.release_date_UTC_list.pop(0)
+    
+    def __str__(self):
+        ret_string = '{}\n{} {}'.format(self.name, self.regex, self.threshold)
+        for ch, date, UTC in zip(self.chapter_list, self.release_date_list, self.release_date_UTC_list):
+            ret_string += '\nChapter: {}, {}, {}'.format(ch, date, UTC)
+        return ret_string
+
 
 # checks if the new chapter post string has already been checked
-def checkChapter(shelfName, mangaName, postTitle, postDate, postUTC, chapter):
-    s = shelve.open(shelfName, flag='w')
+def check_chapter(manga, chapter, postDate, postUTC):
+    ch_list = manga.chapter_list
+    if len(ch_list) == 0:
+        manga.add_entry(int(chapter), postDate, postUTC)
+        return True
 
-    # checks if the post is newer than the latest chapter post
-    for i in range(len(postUTC)):
-        if postUTC[i] > s[mangaName][2][i]:
-            break
-        elif postUTC[i] == s[mangaName][2][i]:
-            continue
-        else:
-            s.close()
-            return False
-        
-    
-    # checks if the title is the same as last chapter
-    if postTitle == s[mangaName][0]:
-        s.close()
-        return False
-    # checks if its a new chapter
-    if chapter <= s[mangaName][3]:
-        s.close()
+    # print(type(chapter), type(ch_list[-1]))
+    if chapter < ch_list[-1] or chapter in ch_list:
         return False
     else:
-        # if its a new chapter, update latest chapter
-        s[mangaName] = [postTitle, postDate, postUTC, chapter]
-        s.close()
+        manga.add_entry(int(chapter), postDate, postUTC)
         return True
 
 # takes subreddit and converts it to a more readable string
-def mangaSubredditToString(subreddit):
+def manga_subreddit_to_string(subreddit):
     re_outer = re.compile(r'([^A-Z ])([A-Z])')
     re_inner = re.compile(r'(?<!^)([A-Z])([^A-Z])')
     return re_outer.sub(r'\1 \2', re_inner.sub(r' \1\2', subreddit))
 
 # prints the latest chapters from the shelf
-def newestChapters(shelfName):
-    s = shelve.open(shelfName, 'r')
-    mangaList = list(s.keys())
+def newest_chapters(manga_dict):
+    '''
+    Prints the newest chapters for each tracked Manga.
 
-    print('Last Chapter Release:')
+    :param dict[Manga] manga_dict: dictionary of tracked Manga objects
+    :rtype: None
+    '''
+    manga_names = list(manga_dict.keys())
+
+    print('Latest Chapters:')
 
     # find longest proper string and chapter names so printing is pretty
-    mangaStrings = []
-    mangaChapters = []
-    max = 0
-    max1 = 0
-    for manga in mangaList:
-        temp = mangaSubredditToString(manga)
-        mangaStrings.append(temp)
+    manga_strings = []
+    manga_chapters = []
+    max1= 0
+    max2 = 0
+    for name in manga_names:
+        manga = manga_dict[name]
+        temp = manga_subreddit_to_string(name)
+        manga_strings.append(temp)
 
-        temp1 = str(s[manga][3])
-        mangaChapters.append(temp1)
+        if len(manga.chapter_list) <= 0:
+            temp1 = 'NONE'
+            manga.add_entry(-1, 'NONE', 'NONE')
+        else:
+            temp1 = str(manga.chapter_list[0])
+        manga_chapters.append(temp1)
 
-        if len(temp) > max:
-            max = len(temp)
-        if len(temp1) > max1:
-            max1 = len(temp1)
+        if len(temp) > max1:
+            max1= len(temp)
+        if len(temp1) > max2:
+            max2 = len(temp1)
 
-    # prints all of the latest chapters
-    i = 0
-    for string in mangaStrings:
-        diff = max - len(string)
-        diff1 = max1 - len(mangaChapters[i])
-        print(string + diff * ' ' + ' (' + 'Chapter ' + mangaChapters[i] + ')' + (diff1 + 1) * ' ' + 'Released on: ' + s[mangaList[i]][1])
-        i += 1
-        
-    s.close()
+    # prints all of the last read chapters
+    for name, chapter in zip(manga_names, manga_chapters):
+        manga = manga_dict[name]
+        name = manga_subreddit_to_string(name)
+        diff = max1- len(name)
+        diff1 = max2 - len(chapter)
+        print(name + diff * ' ' + ' (' + 'Chapter ' + chapter + ')' + (diff1 + 1) * ' ' + 'Released on: ' + manga.release_date_list[0])
+    
 
-def scrapeSubreddits(subreddits):
+def scrape_subreddits(subreddits):
     url = "https://old.reddit.com/r/" 
     headers = {'User-Agent': 'Mozilla/5.0'}
 
@@ -115,7 +142,7 @@ def scrapeSubreddits(subreddits):
     return postsList
             
 # gets date in string form 'DAYOFTHEWEEK MONTH DATE' from html
-def getDateString(dateString):
+def get_date_string(dateString):
 
     # grabs nicely formated date post
     reg = re.compile(r'(Mon|Tue|Wed|Thu|Fri|Sat|Sun)\s...\s\d*\s')
@@ -128,21 +155,17 @@ def getDateString(dateString):
         return found
         
 # gets the date in a list in form [YYYY, MM, DD] from html        
-def getDateUTC(dateString):
+def get_date_UTC(dateString):
     # sifts through a bs4 string and finds formatted infomration
     reg = re.compile(r'\d\d\d\d-\d\d-\d\d')
     try:
         found = re.search(reg, dateString).group(0)
-        arr = found.split('-')
-        temp = []
-        for i in arr:
-            temp.append(int(i))
-        return temp
+        return found
     except:
-        return [0, 0, 0]
+        return '0000-00-00'
 
 # gets the chapter number from the post title
-def getChapter(postTitle):
+def get_chapter(postTitle):
     reg = re.compile(r'\d\d*')
 
     try:
@@ -152,16 +175,23 @@ def getChapter(postTitle):
         return(-1)
 
 # checks all manga to see if there is a new chapter release    
-def newMangaChapter(mangaDict, mangaList):
-    newChapter = False
-    posts = scrapeSubreddits(mangaList)
+def check_for_new_chapter(manga_dict, manga_list):
+    '''
+    Scrapes every tracked Manga's subreddit for new releases.
+
+    :param dict[Manga] manga_dict: 
+        dictionary containing all tracked Manga objects
+    :param list[str] manga_list: list of strings representing tracked Manga
+    :rtype: None
+    '''
+    new_chapter = False
+    posts = scrape_subreddits(manga_list)
 
     index = 0
 
 
-    for post in posts:
-        manga = mangaList[index]
-        reg = re.compile(mangaDict[manga][0], re.IGNORECASE)
+    for post, manga_name in zip(posts, manga_list):
+        reg = manga_dict[manga_name].regex
 
         index += 1
         for data in post:
@@ -172,62 +202,151 @@ def newMangaChapter(mangaDict, mangaList):
             matches = list(set(matches))
 
 
-            if len(matches) >= mangaDict[manga][1]:
-                time = getDateString(str(data[1]))
-                date = getDateUTC(str(data[1]))
-                chapter = getChapter(title)
+            if len(matches) >= manga_dict[manga_name].threshold:
+                date = get_date_string(str(data[1]))
+                UTC = get_date_UTC(str(data[1]))
+                chapter = get_chapter(title)
 
-                if checkChapter('mangaShelf', manga, title, time, date, chapter):
+                if check_chapter(manga_dict[manga_name], chapter, date, UTC):
                     # Converts subreddit name to normal form
-                    mangaStr = mangaSubredditToString(manga)
+                    mangaStr = manga_subreddit_to_string(manga_name)
                     print('New ' + mangaStr + ' Chapter')
-                    newChapter = True
+                    new_chapter = True
                     
 
     # no new chapters
-    if not newChapter:
+    if not new_chapter:
         print('No new Chapters.')
+    print('')
+
+def load_text_file(filename):
+    '''
+    Loads manga_dict from text file. First line of text file contains how many manga are being followed, the first line for each manga contains the name of the manga, the regex used to match a chapter upload, how many matches constitutes a chapter upload, and how many chapters are currently being tracked. Each line following contains the chapter number and the upload date.
+
+    :param string filename: text file
+    :rtype dict[Manga] manga_dict: 
+        dictionary of Manga objects initialized from filename
+    '''
+
+    manga_dict = {}
+    with open(filename, 'r') as f:
+        # first line in the file contains the number of tracked manga
+        num_manga = int(f.readline())
+        for _ in range(num_manga):
+            # each manga has a line containing the name, the regex, threshold, and number of chapters currently tracked
+            f_line = list(f.readline().strip().split(' '))
+            manga_name = f_line[0]
+
+            reg = f_line[1]
+            count_threshold = int(f_line[2])
+
+            manga = Manga(manga_name, reg, count_threshold)
+
+            for _ in range(int(f_line[3])):
+                # adds each tracked chapter
+                chapter_line = list(f.readline().strip().split(', '))
+                manga.add_entry(
+                    int(chapter_line[0]), chapter_line[1], chapter_line[2]
+                )
+            
+            manga_dict[manga_name] = manga 
+    
+    return manga_dict
+        
+def write_text_file(filename, manga_dict):
+    '''
+    Saves current Manga information to filename text file. File format:
+        int : number of manga
+        manga: string, string, int, int
+            subreddit/manga name, regex expression, match threshold, number of chapters tracked
+        chapter tracked: int, string, ####-##-##
+            chapter number, date released, date released number format
+
+
+    :param string filename: output text file name
+    :param dict[Manga] manga_dict: dictionary containing all tracked manga
+    :rtype: None
+    '''
+
+    keys = manga_dict.keys()
+    with open(filename, 'w') as f:
+        print(len(keys), file=f)
+        
+        for manga in keys:
+            m = manga_dict[manga]
+            print(m.name, m.regex.pattern, m.threshold, len(m.chapter_list), sep=' ', file=f)
+
+            for ch, date, UTC in zip(m.chapter_list, m.release_date_list, m.release_date_UTC_list):
+                print(ch, date, UTC, sep=', ', file=f)
+            
+def remove_most_recents(manga_dict):
+    for manga_name in manga_dict:
+        manga = manga_dict[manga_name]
+
+        if len(manga.chapter_list) >= 2:
+            manga.remove_entry()
+        
+
+def main():
+    text_file = 'manga.txt'
+    manga_dict = load_text_file(text_file)
+
+    check_for_new_chapter(manga_dict, list(manga_dict.keys()))
+
+    # TODO allow individual anime chapters to be read, currently only keeps track of single latest chapter
+    max = 0
+    for i in manga_dict:
+        if len(manga_dict[i].chapter_list) > max:
+            max = len(manga_dict[i].chapter_list)
+    for i in range(max - 1):
+        remove_most_recents(manga_dict)
+        print(i)
+
+    newest_chapters(manga_dict)
+
+
+    write_text_file(text_file, manga_dict)
 
 
 
 if __name__ == "__main__":
+    main()
     # Dictionary of subreddit names and new chapter release keywords
-    mangaDict = {
-        'BokuNoHeroAcademia' : [r'Chapter|Discussion|Links?', 3],
-        'ShingekiNoKyojin' : [r'New|Chapter|RELEASE', 3],
-        'ShokugekiNoSoma' : [r'Chapter|Links?|Discussion\s', 2],
-        'GoblinSlayer' : [r'Chapter|Disc\.|CH\.', 3],
-        'ThePromisedNeverland' : [r'Manga|Chapter|Links?|Discussion', 4],
-        'OnePunchMan' : [r'One|Punch|Man|Chapter|English', 5]
-    }
-    # TODO
-    # switch from hardcoded subreddits and regex to text file storage
-    # additionally add method to add/remove manga trackings to the text file
+    # manga_dict = {
+    #     'BokuNoHeroAcademia' : [r'Chapter|Discussion|Links?', 3],
+    #     'ShingekiNoKyojin' : [r'New|Chapter|RELEASE', 3],
+    #     'GoblinSlayer' : [r'Chapter|Disc\.|CH\.', 3],
+    #     'ThePromisedNeverland' : [r'Manga|Chapter|Links?|Discussion', 4],
+    #     'OnePunchMan' : [r'One|Punch|Man|Chapter|English', 5]
+    # }
+    # # TODO
+    # # switch from hardcoded subreddits and regex to text file storage
+    # # additionally add method to add/remove manga trackings to the text file
 
-    mangaList = list(mangaDict.keys())
+    # manga_list = list(manga_dict.keys())
 
-    if len(sys.argv) == 2:
-        if sys.argv[1] == 'reset':
-            resetShelf('mangaShelf', mangaList)
-        if sys.argv[1] == 'check':
-            try:
-                newMangaChapter(mangaDict, mangaList)   
-            except:
-                print('Error Occurred - Resetting Shelf')
-                resetShelf('mangaShelf', mangaList)
-                try: 
-                    newMangaChapter(mangaDict, mangaList)
-                except:
-                    print('Error Occured')
-        if sys.argv[1] == 'latest':
-            newestChapters('mangaShelf')
-    else:
-        print(
-            "Reddit Manga Chapter Scraper Usage:\n"
-            "manga.py reset: resets saved data\n"
-            "manga.py check: checks for new chapter uploads\n"
-            "manga.py latest: prints latest chapter releases"
-            )
+    # if len(sys.argv) == 2:
+    #     if sys.argv[1] == 'reset':
+    #         resetShelf('mangaShelf', manga_list)
+    #     if sys.argv[1] == 'check':
+    #         try:
+    #             check_for_new_chapter(manga_dict, manga_list)   
+    #         except:
+    #             print('Error Occurred - Resetting Shelf')
+    #             resetShelf('mangaShelf', manga_list)
+    #             try: 
+    #                 check_for_new_chapter(manga_dict, manga_list)
+    #             except:
+    #                 print('Error Occured')
+    #     if sys.argv[1] == 'latest':
+    #         newest_chapters('mangaShelf')
+    # else:
+    #     print(
+    #         "Reddit Manga Chapter Scraper Usage:\n"
+    #         "manga.py reset: resets saved data\n"
+    #         "manga.py check: checks for new chapter uploads\n"
+    #         "manga.py latest: prints latest chapter releases"
+    #         )
 
 
         
