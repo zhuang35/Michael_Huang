@@ -4,7 +4,7 @@
 # shelf stores information in the format:
     # 'POST TITLE' : str, 'DATESTRING' : str, [YYYY, MM, DD] : int list, CHAPTERNUMBER : int
 
-import requests, re, bs4, shelve, sys
+import requests, re, bs4, shelve, sys, string
 
 
 class Manga:
@@ -197,6 +197,8 @@ def check_for_new_chapter(manga_dict, manga_list):
         for data in post:
             # checks post titles for keywords that would indicate a new chapter release
             title = data[0]
+            # removes all punctuation from title
+            title = title.translate(str.maketrans(string.punctuation, ' '*len(string.punctuation)))
 
             matches = re.findall(reg, title)
             matches = list(set(matches))
@@ -300,7 +302,7 @@ def main():
             max = len(manga_dict[i].chapter_list)
     for i in range(max - 1):
         remove_most_recents(manga_dict)
-        print(i)
+
 
     newest_chapters(manga_dict)
 
@@ -311,42 +313,6 @@ def main():
 
 if __name__ == "__main__":
     main()
-    # Dictionary of subreddit names and new chapter release keywords
-    # manga_dict = {
-    #     'BokuNoHeroAcademia' : [r'Chapter|Discussion|Links?', 3],
-    #     'ShingekiNoKyojin' : [r'New|Chapter|RELEASE', 3],
-    #     'GoblinSlayer' : [r'Chapter|Disc\.|CH\.', 3],
-    #     'ThePromisedNeverland' : [r'Manga|Chapter|Links?|Discussion', 4],
-    #     'OnePunchMan' : [r'One|Punch|Man|Chapter|English', 5]
-    # }
-    # # TODO
-    # # switch from hardcoded subreddits and regex to text file storage
-    # # additionally add method to add/remove manga trackings to the text file
-
-    # manga_list = list(manga_dict.keys())
-
-    # if len(sys.argv) == 2:
-    #     if sys.argv[1] == 'reset':
-    #         resetShelf('mangaShelf', manga_list)
-    #     if sys.argv[1] == 'check':
-    #         try:
-    #             check_for_new_chapter(manga_dict, manga_list)   
-    #         except:
-    #             print('Error Occurred - Resetting Shelf')
-    #             resetShelf('mangaShelf', manga_list)
-    #             try: 
-    #                 check_for_new_chapter(manga_dict, manga_list)
-    #             except:
-    #                 print('Error Occured')
-    #     if sys.argv[1] == 'latest':
-    #         newest_chapters('mangaShelf')
-    # else:
-    #     print(
-    #         "Reddit Manga Chapter Scraper Usage:\n"
-    #         "manga.py reset: resets saved data\n"
-    #         "manga.py check: checks for new chapter uploads\n"
-    #         "manga.py latest: prints latest chapter releases"
-    #         )
 
 
         
